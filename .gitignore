@@ -1,0 +1,11 @@
+*.csv
+*.json
+bokeh_source
+*.pyc
+.ipynb_checkpoints
+*.icloud
+*.png
+*.gif
+*.html
+*.zip
+*.log
