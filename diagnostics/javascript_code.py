@@ -1,4 +1,6 @@
 pipeline_selection = """
+    
+        // Get data from input sources
         var inds = cb_obj.selected.indices;
         var d1 = cb_obj.data;
         var d2 = selected_source_points.data;
@@ -9,6 +11,7 @@ pipeline_selection = """
         var d8 = source_pruning.data;
         var d9 = selected_source_pruning.data;
     
+        // Initialize empty array for selected points data
         IDs = [];
         d4['ID'] = [];
         d4['validation_error'] = [];
@@ -17,10 +20,12 @@ pipeline_selection = """
         d4['color'] = [];
         d4['name'] = [];
         
+        // Initialize empty array for selected points data
         for (var key in d1){
             d2[key] = []
         }
         
+        // Add IDs
         for (var i = 0; i < inds.length; i++) {
             curr_ID = d1['ID'][inds[i]]
             IDs.push(curr_ID)
@@ -29,6 +34,7 @@ pipeline_selection = """
             }
         }
         
+        // Initialize empty array for selected points data (pruning)
         d9['ID'] = []
         d9['train_pruning_error'] = [];
         d9['ipa_pruning_error'] = [];
@@ -38,9 +44,13 @@ pipeline_selection = """
         d9['ipa2_pruning_samp_size'] = [];
         d9['color'] = [];
         
-        
+        // Iterate over pruning data
         for (var ii = 0; ii < d8['train_pruning_error'].length; ii++) {
+        
+            // Iterate over IDs (of selected points)
             for (var iii = 0; iii < IDs.length; iii++) {
+            
+                // If ID matches, add data to selected points data (pruning)
                 if (IDs[iii] == d8['ID'][ii]) {
                     d9['ID'].push(IDs[iii])
                     d9['train_pruning_error'].push(d8['train_pruning_error'][ii])
@@ -54,6 +64,7 @@ pipeline_selection = """
             }
         }
         
+        // Initialize empty dictionaries for group data
         score_groups = {};
         score_groups_train = {};
         samp_groups = {};
@@ -61,8 +72,14 @@ pipeline_selection = """
         name_groups = {};
         samp_score_avg = {};
         samp_score_avg_train = {};
+        
+        // Iterate over progression data
         for (var ii = 0; ii < d5['validation_error'].length; ii++) {
+        
+            // Iterate over IDs (selected points)
             for (var iii = 0; iii < IDs.length; iii++) {
+            
+                // If ID matches, add data
                 if (IDs[iii] == d5['ID'][ii]) {
                     validation_error = d5['validation_error'][ii]
                     train_error = d5['train_error'][ii]
@@ -77,6 +94,7 @@ pipeline_selection = """
                     d4['color'].push(color)
                     d4['name'].push(name)
                     
+                    // If ID in group
                     if (ID in score_groups) {
                         score_groups[ID].push(validation_error)
                         score_groups_train[ID].push(train_error)
@@ -89,7 +107,7 @@ pipeline_selection = """
                         name_groups[ID] = name
                     }
                     
-                    
+                    // If sample size in score average
                     if (sample_size in samp_score_avg) {
                         samp_score_avg[sample_size].push(validation_error)
                         samp_score_avg_train[sample_size].push(train_error)
@@ -102,12 +120,15 @@ pipeline_selection = """
             }
         }
         
+        // Initialize empty arrays for partial score data
         part_score_line = [];
         part_samp_line = [];
         part_score_line_train = [];
         line_colors = [];
         names = [];
         IDS = [];
+        
+        // Iterate over groups
         for(var key in score_groups) {
             var score = score_groups[key]
             var score_train = score_groups_train[key]
@@ -120,6 +141,7 @@ pipeline_selection = """
             IDS.push(key)
         }
         
+        // Add progression data
         d6['validation_error'] = part_score_line;
         d6['train_error'] = part_score_line_train;
         d6['sample_size'] = part_samp_line;
@@ -127,11 +149,14 @@ pipeline_selection = """
         d6['name'] = names;
         d6['ID'] = IDS;
         
+        // Initialize empty arrays for average data
         part_score_avg = [];
         part_score_avg_train = [];
         part_samp_avg = [];
         names_avg = [];
         IDS_avg = [];
+        
+        // Iterate over average data
         for(var key in samp_score_avg) {
             part_samp_avg.push(key)
             var scores = samp_score_avg[key]
@@ -146,12 +171,14 @@ pipeline_selection = """
             IDS_avg.push("NA")
         }
         
+        // Add data
         d7['validation_error'] = part_score_avg;
         d7['train_error'] = part_score_avg_train;
         d7['sample_size'] = part_samp_avg;
         d7['name'] = names_avg;
         d7['ID'] = IDS_avg;
         
+        // Emit changes to source data
         selected_source_points.change.emit();
         selected_source_points_plot.change.emit();
         selected_source_points_line_plot.change.emit();

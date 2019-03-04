@@ -1,5 +1,6 @@
 import pandas as pd
 
+# Function to make boxplots for all pipelines in a dump
 def make_plot(figure, source, source_points):
     
     # stems
@@ -14,15 +15,17 @@ def make_plot(figure, source, source_points):
     figure.rect("lower", "methods", 0.01, 0.2, line_color="black", source=source)
     figure.rect("upper", "methods", 0.01, 0.2, line_color="black", source=source)
 
+    # Point for each pipeline
     figure.circle('y', 'x', size='size', color='color', alpha=0.33, source=source_points, name="pipe")
     
-
+    # Figure formatting
     figure.ygrid.grid_line_color = None
     figure.xgrid.grid_line_color = "white"
     figure.grid.grid_line_width = 2
     figure.yaxis.major_label_text_font_size="12pt"
     figure.legend.location = "top_right"
     
+# Function to make new boxplots to save as a gif
 def make_plot_for_saving(figure, source_data, source_point_data):
     
     # stems
@@ -37,16 +40,23 @@ def make_plot_for_saving(figure, source_data, source_point_data):
     figure.rect(source_data["lower"], source_data["methods"], 0.01, 0.2, line_color="black")
     figure.rect(source_data["upper"], source_data["methods"], 0.01, 0.2, line_color="black")
 
+    # Point for each pipeline
     figure.circle(source_point_data['y'], source_point_data['x'], size=source_point_data['size'], color=source_point_data['color'], alpha=0.75, name="pipe")
 
+    # Figure formatting
     figure.ygrid.grid_line_color = None
     figure.xgrid.grid_line_color = "white"
     figure.grid.grid_line_width = 2
     figure.yaxis.major_label_text_font_size="12pt"
     figure.legend.location = "top_right"
     
+# Function to generate info for boxplots (IQR, ranges, outliers)
 def munge_boxplot_data(pipeline_data, statistic):
+    
+        # Group pipelines by type of classifier
         groups = pipeline_data.groupby('Name')
+        
+        # Sorting
         sort_stat = statistic.value
         ascending = False
         if sort_stat == "Median":
@@ -63,6 +73,8 @@ def munge_boxplot_data(pipeline_data, statistic):
         sorter = list(groups_sort.sort_values('Accuracy', ascending=ascending)['Name'])
         methods = list((groups.groups.keys()))
         methods = sorter
+        
+        # Get quantiles of each group
         q1 = groups.quantile(q=0.25)
         q2 = groups.quantile(q=0.5)
         q3 = groups.quantile(q=0.75)
@@ -76,12 +88,15 @@ def munge_boxplot_data(pipeline_data, statistic):
         upper = q3 + 1.5*iqr
         lower = q1 - 1.5*iqr
         
+        # Get quantile mins and maxes
         qmin = groups.quantile(q=0.00)
         qmax = groups.quantile(q=1.00)
         qmin['name'] = pd.Categorical(qmin.index, sorter)
         qmin = qmin.sort_values('name').iloc[:,0:1]
         qmax['name'] = pd.Categorical(qmax.index, sorter)
         qmax = qmax.sort_values('name').iloc[:,0:1]
+        
+        # Reformat data
         upper.Accuracy = [min([x,y]) for (x,y) in zip(list(qmax.loc[:,'Accuracy']),upper.Accuracy)]
         lower.Accuracy = [max([x,y]) for (x,y) in zip(list(qmin.loc[:,'Accuracy']),lower.Accuracy)]
         

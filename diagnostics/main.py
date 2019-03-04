@@ -8,15 +8,14 @@ from bokeh.io import curdoc, export_svgs, export_png
 from bokeh.plotting import figure, output_file, save
 from bokeh.models.tools import BoxZoomTool, HoverTool
 from bokeh.models import ColumnDataSource, CustomJS, Button, LayoutDOM, Range1d, Legend, LegendItem
-from bokeh.events import ButtonClick
 from bokeh.core.properties import String
 from bokeh.palettes import Viridis256, Plasma256
 from random import shuffle
 from time import sleep,time
-import signal
 import re
 from PIL import Image
 import shutil
+from functools import partial
 
 from javascript_code import *
 from callback_functions import *
@@ -37,7 +36,9 @@ colors = colors * 100
 tag_counts = {"random-general":0, "meta-learning":0, "random-data-specific":0, "cost_model-weighed_random":0}
 
 all_params = ['max_features','learning_rate','C','power_t','dual','n_neighbors','max_samples','penalty','max_depth','tol','average','epsilon','p','weights','subsample','min_samples_leaf','bootstrap','min_samples_split','criterion','loss','alpha','n_estimators','max_iter','min_child_weight']
-def upload_data():
+
+
+def upload_data(num_pipes, num_pipes_text, optimizer_progression_range):
     global data
     path = 'aps-i2pa/' + input.value[12:]
     with open(path) as f:
@@ -48,15 +49,16 @@ def upload_data():
     num_pipes.end = num_poss_pipes
     optimizer_progression_range.value = "1,{}".format(num_poss_pipes)
     munge_data()
-    p.y_range.factors = source.data['methods']
+    pipeline_results_boxplot_figure.y_range.factors = source.data['methods']
     min_samp = min(source_progression.data['sample_size'])
     max_samp = max(source_progression.data['sample_size'])
     if max_samp < min_samp:
         max_samp = min_samp
         min_samp = 0
-    p2.x_range = Range1d(min_samp, max_samp)
+    incremental_results_validation_figure.x_range = Range1d(min_samp, max_samp)
 
-def munge_data(pipe_num=None, return_data=False):
+
+def munge_data(pipe_num=None, return_data=False, return_tag_counts=False):
     pipeline_dict = {}
     pipeline_dict_keys = ['Name', 'Accuracy', 'validation_error', 'train_error', 'sample_size', 'ID', 'color', 'boxplot_color', 'training_time', 'train_pruning', 'ipa_pruning', 'ipa2_pruning', 'best_so_far']
     for name in pipeline_dict_keys:
@@ -64,8 +66,7 @@ def munge_data(pipe_num=None, return_data=False):
 
     scores = []
     for idx,pipeline in enumerate(data):
-        progression = progression = json.loads(pipeline['metrics']['progression'])
-        #score = pipeline['metrics']['score']
+        progression = json.loads(pipeline['metrics']['progression'])
         score = list(progression['validation_error'].values())[-1]
         if score is not None and progression is not None:
             scores.append(score)
@@ -74,14 +75,13 @@ def munge_data(pipe_num=None, return_data=False):
     IQR = Q3 - Q1
     x0 = max(Q1 - 5 * IQR, min(scores))
     x1 = min(Q3 + 5 * IQR, max(scores))
-    p.x_range = Range1d(x0, x1)
+    pipeline_results_boxplot_figure.x_range = Range1d(x0, x1)
     for param in all_params:
         pipeline_dict[param] = []
     best_so_far = np.inf
     global tag_counts
     tag_counts = {"random-general":0, "meta-learning":0, "random-data-specific":0, "cost_model-weighed_random":0}
     for idx,pipeline in enumerate(data):
-        #score = pipeline['metrics']['score']
         progression = json.loads(pipeline['metrics']['progression'])
         score = list(progression['validation_error'].values())[-1]
         if (score is not None) and (progression is not None) and (score > Q1 - 5*IQR) and (score < Q3 + 5*IQR):
@@ -240,7 +240,12 @@ def munge_data(pipe_num=None, return_data=False):
                                             'score': [pipeline_dict['Accuracy'][best_pipe_idx]], 'x': [pipeline_dict['Name'][best_pipe_idx]]}
     
     if return_data:
-        return source_data, source_dict
+        if return_tag_counts:
+            return source_data, source_dict, tag_counts
+        else:
+            return source_data, source_dict
+    elif return_tag_counts:
+        return tag_counts
 
 
 class FileInput(LayoutDOM):
@@ -249,10 +254,10 @@ class FileInput(LayoutDOM):
 
 input = FileInput()
 
-def upload():
-    print(input.value)
+# def upload():
+#     print(input.value)
 upload_botton = Button(label="Upload")
-upload_botton.on_click(upload_data)
+upload_botton.on_click(partial(upload_data, num_pipes, num_pipes_text, optimizer_progression_range))
 
 
 source = ColumnDataSource(data=dict(methods=[], q1=[], q2=[], q3=[], upper=[], lower=[]))
@@ -283,68 +288,62 @@ TOOLTIPS = [
 
 hover = HoverTool(names=["circle", "best_circle", "avg_circle"], tooltips=TOOLTIPS)
 hover_train = HoverTool(names=["circle_train", "best_circle_train", "avg_circle_train"], tooltips=TOOLTIPS)
-p = figure(tools="pan,wheel_zoom,reset,box_select,save", background_fill_color="#EFE8E2", title="", y_range=source.data['methods'], plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT)
-#p.output_backend = "svg"
-p2 = figure(tools=["pan,wheel_zoom,reset,box_select", hover], background_fill_color="#EFE8E2", title="", plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT)
-p2.circle(x='sample_size', y='validation_error', size=10, color='color', source=selected_source_points_plot, name="circle")
-p2.multi_line(xs='sample_size', ys='validation_error', color='color', line_width=3, source=selected_source_points_line_plot)
-best_pipe_plot = p2.circle(x='sample_size', y='validation_error', size=20, color='green', source=source_points_best_pipe, name="best_circle")
-best_pipe_line_plot = p2.line(x='sample_size', y='validation_error', line_width=6, color='green', source=source_points_best_pipe)
-avg_pipe_plot = p2.circle(x='sample_size', y='validation_error', size=20, color='red', source=selected_source_points_avg_pipe, name="avg_circle")
-avg_pipe_line_plot = p2.line(x='sample_size', y='validation_error', line_width=6, color='red', source=selected_source_points_avg_pipe)
-p3 = figure(tools=["pan,wheel_zoom,reset,box_select"], background_fill_color="#EFE8E2", title="", plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT, tooltips=[("Name", "@x")])
-p3.scatter(x='training_time', y='y', color='estimator_color', source=source_points, legend='x')
-#p3.circle(x='training_time', y='score', size=10, color='black', source=source_point_training_time_best)
-p3.legend.location = "top_right"
-p3.x_range = Range1d(0,10)
+pipeline_results_boxplot_figure = figure(tools="pan,wheel_zoom,reset,box_select,save", background_fill_color="#EFE8E2", title="", y_range=source.data['methods'], plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT)
+incremental_results_validation_figure = figure(tools=["pan,wheel_zoom,reset,box_select", hover], background_fill_color="#EFE8E2", title="", plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT)
+incremental_results_validation_figure.circle(x='sample_size', y='validation_error', size=10, color='color', source=selected_source_points_plot, name="circle")
+incremental_results_validation_figure.multi_line(xs='sample_size', ys='validation_error', color='color', line_width=3, source=selected_source_points_line_plot)
+best_pipe_plot = incremental_results_validation_figure.circle(x='sample_size', y='validation_error', size=20, color='green', source=source_points_best_pipe, name="best_circle")
+best_pipe_line_plot = incremental_results_validation_figure.line(x='sample_size', y='validation_error', line_width=6, color='green', source=source_points_best_pipe)
+avg_pipe_plot = incremental_results_validation_figure.circle(x='sample_size', y='validation_error', size=20, color='red', source=selected_source_points_avg_pipe, name="avg_circle")
+avg_pipe_line_plot = incremental_results_validation_figure.line(x='sample_size', y='validation_error', line_width=6, color='red', source=selected_source_points_avg_pipe)
+training_time_figure = figure(tools=["pan,wheel_zoom,reset,box_select"], background_fill_color="#EFE8E2", title="", plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT, tooltips=[("Name", "@x")])
+training_time_figure.scatter(x='training_time', y='y', color='estimator_color', source=source_points, legend='x')
+training_time_figure.legend.location = "top_right"
+training_time_figure.x_range = Range1d(0, 10)
 
-p4 = figure(tools=["pan,wheel_zoom,reset,box_select", hover_train], background_fill_color="#EFE8E2", title="", plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT)
-p4.circle(x='sample_size', y='train_error', size=10, color='color', source=selected_source_points_plot, name="circle_train")
-p4.multi_line(xs='sample_size', ys='train_error', color='color', line_width=3, source=selected_source_points_line_plot)
-train_pruning_glyph = p4.x(x='train_pruning_samp_size', y='train_pruning_error', color='color', size=33, line_width=5, source=selected_source_pruning)
-ipa_pruning_glyph = p4.x(x='ipa_pruning_samp_size', y='ipa_pruning_error', color='color', size=33, line_width=5, source=selected_source_pruning)
-ipa2_pruning_glyph = p4.x(x='ipa2_pruning_samp_size', y='ipa2_pruning_error', color='color', size=33, line_width=5, source=selected_source_pruning)
-best_pipe_plot_train = p4.circle(x='sample_size', y='train_error', size=20, color='green', source=source_points_best_pipe, name="best_circle_train")
-best_pipe_line_plot_train = p4.line(x='sample_size', y='train_error', line_width=6, color='green', source=source_points_best_pipe)
-avg_pipe_plot_train = p4.circle(x='sample_size', y='train_error', size=20, color='red', source=selected_source_points_avg_pipe, name="avg_circle_train")
-avg_pipe_line_plot_train = p4.line(x='sample_size', y='train_error', line_width=6, color='red', source=selected_source_points_avg_pipe)
-p5 = figure(tools=["pan,wheel_zoom,reset,box_select"], background_fill_color="#EFE8E2", title="", plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT, tooltips=[("Name", "@x")])
-p5.line(x='ID', y='best_so_far', line_width=3, color='Blue', source=source_points, name="best_so_far_line")
-p5.circle(x='ID', y='best_so_far', size=7, color='Red', source=source_points, name="best_so_far_circle")
-p6 = figure(tools=["pan,wheel_zoom,reset,box_select"], background_fill_color="#EFE8E2", title="", plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT, tooltips=[("Name", "@x")])
-p6_circles = p6.circle(x='ID', y='y', size=7, color='estimator_color', source=source_points, name="pipe_num_vs_score", legend='x')
-p6.legend.location = "top_right"
+incremental_results_training_figure = figure(tools=["pan,wheel_zoom,reset,box_select", hover_train], background_fill_color="#EFE8E2", title="", plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT)
+incremental_results_training_figure.circle(x='sample_size', y='train_error', size=10, color='color', source=selected_source_points_plot, name="circle_train")
+incremental_results_training_figure.multi_line(xs='sample_size', ys='train_error', color='color', line_width=3, source=selected_source_points_line_plot)
+train_pruning_glyph = incremental_results_training_figure.x(x='train_pruning_samp_size', y='train_pruning_error', color='color', size=33, line_width=5, source=selected_source_pruning)
+ipa_pruning_glyph = incremental_results_training_figure.x(x='ipa_pruning_samp_size', y='ipa_pruning_error', color='color', size=33, line_width=5, source=selected_source_pruning)
+ipa2_pruning_glyph = incremental_results_training_figure.x(x='ipa2_pruning_samp_size', y='ipa2_pruning_error', color='color', size=33, line_width=5, source=selected_source_pruning)
+best_pipe_plot_train = incremental_results_training_figure.circle(x='sample_size', y='train_error', size=20, color='green', source=source_points_best_pipe, name="best_circle_train")
+best_pipe_line_plot_train = incremental_results_training_figure.line(x='sample_size', y='train_error', line_width=6, color='green', source=source_points_best_pipe)
+avg_pipe_plot_train = incremental_results_training_figure.circle(x='sample_size', y='train_error', size=20, color='red', source=selected_source_points_avg_pipe, name="avg_circle_train")
+avg_pipe_line_plot_train = incremental_results_training_figure.line(x='sample_size', y='train_error', line_width=6, color='red', source=selected_source_points_avg_pipe)
+optimizer_improvement_figure = figure(tools=["pan,wheel_zoom,reset,box_select"], background_fill_color="#EFE8E2", title="", plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT, tooltips=[("Name", "@x")])
+optimizer_improvement_figure.line(x='ID', y='best_so_far', line_width=3, color='Blue', source=source_points, name="best_so_far_line")
+optimizer_improvement_figure.circle(x='ID', y='best_so_far', size=7, color='Red', source=source_points, name="best_so_far_circle")
+optimizer_incremental_results_figure = figure(tools=["pan,wheel_zoom,reset,box_select"], background_fill_color="#EFE8E2", title="", plot_width=PLOT_WIDTH, plot_height=PLOT_HEIGHT, tooltips=[("Name", "@x")])
+p6_circles = optimizer_incremental_results_figure.circle(x='ID', y='y', size=7, color='estimator_color', source=source_points, name="pipe_num_vs_score", legend='x')
+optimizer_incremental_results_figure.legend.location = "top_right"
 
 # Initialize glyphs to be hidden
-best_pipe_plot.visible=best_pipe_line_plot.visible=avg_pipe_plot.visible=avg_pipe_line_plot.visible=train_pruning_glyph.visible=ipa_pruning_glyph.visible=ipa2_pruning_glyph.visible=best_pipe_plot_train.visible=best_pipe_line_plot_train.visible=avg_pipe_plot_train.visible=avg_pipe_line_plot_train.visible=p6.legend.visible=False
+best_pipe_plot.visible=best_pipe_line_plot.visible=avg_pipe_plot.visible=avg_pipe_line_plot.visible=train_pruning_glyph.visible=ipa_pruning_glyph.visible=ipa2_pruning_glyph.visible=best_pipe_plot_train.visible=best_pipe_line_plot_train.visible=avg_pipe_plot_train.visible=avg_pipe_line_plot_train.visible=optimizer_incremental_results_figure.legend.visible=False
 
-#figure.circle([], [], color="Red", fill_alpha=0.75, size=6, legend="Current Pipeline")
-legend_p_1 = p.circle([], [], color="Blue", fill_alpha=0.75, size=6)
-legend_p_2 = p.circle([], [], color="Purple", fill_alpha=0.75, size=6)
-legend_p_3 = p.circle([], [], color="Green", fill_alpha=0.75, size=6)
-legend_p_4 = p.circle([], [], color="Red", fill_alpha=0.75, size=6)
-legend = Legend(items=[("Random General", [legend_p_1]), ("Meta Learning" , [legend_p_2]), ("Random Data Specific" , [legend_p_3]), ("Cost Model Weighed Random" , [legend_p_4])])
-p.add_layout(legend)
-p.legend.location = "top_right"
 
-make_plot(p, source, source_points)
+legend_circles_boxplot = []
+for color in ["Blue", "Purple", "Green", "Red"]:
+    legend_circles_boxplot.append(pipeline_results_boxplot_figure.circle([], [], color=color, fill_alpha=0.75, size=6))
 
-def change_num_pipes():
-    num_pipes.value = int(num_pipes_text.value)
-    optimizer_progression_range.value = "{},{}".format(num_pipes_text.value,num_pipes.end)
+legend = Legend(items=[("Random General", [legend_circles_boxplot[0]]), ("Meta Learning" , [legend_circles_boxplot[1]]), ("Random Data Specific" , [legend_circles_boxplot[2]]), ("Cost Model Weighed Random" , [legend_circles_boxplot[3]])])
+pipeline_results_boxplot_figure.add_layout(legend)
+pipeline_results_boxplot_figure.legend.location = "top_right"
+
+make_plot(pipeline_results_boxplot_figure, source, source_points)
 
 def change_plot(change_y_range=True):
     munge_data()
     
-    p.legend.items = [LegendItem(label="Random General: {}".format(tag_counts['random-general']), renderers=[legend_p_1]), LegendItem(label="Meta Learning: {}".format(tag_counts['meta-learning']), renderers=[legend_p_2]), LegendItem(label="Random Data Specific: {}".format(tag_counts['random-data-specific']), renderers=[legend_p_3]), LegendItem(label="Cost Model Weighed Random: {}".format(tag_counts['cost_model-weighed_random']), renderers=[legend_p_4])]
+    pipeline_results_boxplot_figure.legend.items = [LegendItem(label="Random General: {}".format(tag_counts['random-general']), renderers=[legend_circles_boxplot[0]]), LegendItem(label="Meta Learning: {}".format(tag_counts['meta-learning']), renderers=[legend_circles_boxplot[1]]), LegendItem(label="Random Data Specific: {}".format(tag_counts['random-data-specific']), renderers=[legend_circles_boxplot[2]]), LegendItem(label="Cost Model Weighed Random: {}".format(tag_counts['cost_model-weighed_random']), renderers=[legend_circles_boxplot[3]])]
     source.data = source.data
     sleep(0.5)
     
     if change_y_range:
-        p.y_range.factors = source.data['methods']
+        pipeline_results_boxplot_figure.y_range.factors = source.data['methods']
     
     
-def run_optimizer_progression():
+def run_optimizer_progression(optimizer_progression_range, optimizer_progression_size, optimizer_progression_max_time, num_pipes, optimizer_progression_speed):
     start_time = time()
     start_stop = optimizer_progression_range.value.split(",")
     for num_pipe in range(int(start_stop[0]),int(start_stop[1])+1,int(optimizer_progression_size.value)):
@@ -357,7 +356,7 @@ def run_optimizer_progression():
     num_pipes.value = int(start_stop[1])
     
     
-def generate_gif():
+def generate_gif(input, gif_x_range, source, num_pipes, optimizer_progression_size, pipeline_results_boxplot_figure, legend_circles_boxplot, gif_speed):
     print("Beginning Generating Gif")
     
     try:
@@ -370,7 +369,7 @@ def generate_gif():
         pass
     os.mkdir('Plots/{}'.format(input.value[12:-5]))
     gif_x_range_vals = str.split(gif_x_range.value, ",")
-    
+
     munge_data()
     all_classifiers = source.data['methods']
     
@@ -378,7 +377,7 @@ def generate_gif():
     if pipe_vals[-1] != num_pipes.end:
         pipe_vals.append(num_pipes.end)
     for num_pipe in pipe_vals:
-        source_data, source_points_data = munge_data(num_pipe, return_data=True)
+        source_data, source_points_data, tag_counts = munge_data(num_pipe, return_data=True, return_tag_counts=True)
 #         p.y_range.factors = source_data['methods']
         
         plot = figure(tools="", background_fill_color="#EFE8E2", title="", y_range=all_classifiers, plot_width=1000, plot_height=600)
@@ -388,7 +387,7 @@ def generate_gif():
         plot.circle([], [], color="Green", fill_alpha=0.75, size=6, legend="Random Data Specific: {}".format(tag_counts['random-data-specific']))
         plot.circle([], [], color="Red", fill_alpha=0.75, size=6, legend="Cost Model Weighed Random: {}".format(tag_counts['cost_model-weighed_random']))
         
-        p.legend.items = [LegendItem(label="Random General: {}".format(tag_counts['random-general']), renderers=[legend_p_1]), LegendItem(label="Meta Learning: {}".format(tag_counts['meta-learning']), renderers=[legend_p_2]), LegendItem(label="Random Data Specific: {}".format(tag_counts['random-data-specific']), renderers=[legend_p_3]), LegendItem(label="Cost Model Weighed Random: {}".format(tag_counts['cost_model-weighed_random']), renderers=[legend_p_4])]
+        pipeline_results_boxplot_figure.legend.items = [LegendItem(label="Random General: {}".format(tag_counts['random-general']), renderers=[legend_circles_boxplot[0]]), LegendItem(label="Meta Learning: {}".format(tag_counts['meta-learning']), renderers=[legend_circles_boxplot[1]]), LegendItem(label="Random Data Specific: {}".format(tag_counts['random-data-specific']), renderers=[legend_circles_boxplot[2]]), LegendItem(label="Cost Model Weighed Random: {}".format(tag_counts['cost_model-weighed_random']), renderers=[legend_circles_boxplot[3]])]
         source.data = source.data
         
         make_plot_for_saving(plot, source_data, source_points_data)
@@ -416,12 +415,12 @@ def generate_gif():
     print("Finished Generating Gif")
     
     
-statistic.on_change("value", lambda attr, old, new: change_plot())
 # metric.on_change("value", lambda attr, old, new: change_plot())
+statistic.on_change("value", lambda attr, old, new: change_plot())
 num_pipes.on_change("value", lambda attr, old, new: change_plot(change_y_range=False))
-run_optimizer_progression_button.on_click(run_optimizer_progression)
-generate_gif_button.on_click(generate_gif)
-num_pipes_text.on_change("value", lambda attr, old, new: change_num_pipes())
+run_optimizer_progression_button.on_click(partial(run_optimizer_progression, optimizer_progression_range, optimizer_progression_size, optimizer_progression_max_time, num_pipes, optimizer_progression_speed))
+generate_gif_button.on_click(partial(generate_gif, input, gif_x_range, source, num_pipes, optimizer_progression_size, pipeline_results_boxplot_figure, legend_circles_boxplot, gif_speed))
+num_pipes_text.on_change("value", lambda attr, old, new: change_num_pipes(num_pipes, num_pipes_text.value, optimizer_progression_range))
 
 
 columns = [
@@ -432,34 +431,30 @@ columns = [
 for param in all_params:
     columns.append(TableColumn(field=param, title=param))
     
-
-data_table = widgetbox(DataTable(source=selected_source_points, columns=columns,sizing_mode = 'scale_width', fit_columns=False, width=1200))
-data_table2 = widgetbox(DataTable(source=selected_source_points, columns=columns,sizing_mode = 'scale_width', fit_columns=False, width=1200))
-data_table3 = widgetbox(DataTable(source=selected_source_points, columns=columns,sizing_mode = 'scale_width', fit_columns=False, width=1200))
-data_table4 = widgetbox(DataTable(source=selected_source_points, columns=columns,sizing_mode = 'scale_width', fit_columns=False, width=1200))
-data_table5 = widgetbox(DataTable(source=selected_source_points, columns=columns,sizing_mode = 'scale_width', fit_columns=False, width=1200))
-data_table6 = widgetbox(DataTable(source=selected_source_points, columns=columns,sizing_mode = 'scale_width', fit_columns=False, width=1200))
+data_tables = []
+for _ in range(6):
+    data_tables.append(widgetbox(DataTable(source=selected_source_points, columns=columns,sizing_mode = 'scale_width', fit_columns=False, width=1200)))
 
 
-show_best_pipeline.on_change("value", lambda attr, old, new: best_pipe(best_pipe_plot, best_pipe_plot_train, best_pipe_line_plot, best_pipe_line_plot_train))
-show_avg_pipeline.on_change("value", lambda attr, old, new: avg_pipe(avg_pipe_plot, avg_pipe_plot_train, avg_pipe_line_plot, avg_pipe_line_plot_train))
-show_legend_option.on_change("value", lambda attr, old, new: show_legend(p3))
-show_legend_option2.on_change("value", lambda attr, old, new: show_legend2(p))
-show_legend_option3.on_change("value", lambda attr, old, new: show_legend3(p6))
-show_best_pipeline_train.on_change("value", lambda attr, old, new: best_pipe(best_pipe_plot, best_pipe_plot_train, best_pipe_line_plot, best_pipe_line_plot_train))
-show_avg_pipeline_train.on_change("value", lambda attr, old, new: avg_pipe(avg_pipe_plot, avg_pipe_plot_train, avg_pipe_line_plot, avg_pipe_line_plot_train))
-show_train_pruning.on_change("value", lambda attr, old, new: pruning_cutoff(train_pruning_glyph, ipa_pruning_glyph, ipa2_pruning_glyph))
-show_ipa_pruning.on_change("value", lambda attr, old, new: pruning_cutoff(train_pruning_glyph, ipa_pruning_glyph, ipa2_pruning_glyph))
-show_ipa2_pruning.on_change("value", lambda attr, old, new: pruning_cutoff(train_pruning_glyph, ipa_pruning_glyph, ipa2_pruning_glyph))
+show_legend_option.on_change("value", lambda attr, old, new: show_legend_callback(training_time_figure, show_legend_option.value))
+show_legend_option2.on_change("value", lambda attr, old, new: show_legend_callback(pipeline_results_boxplot_figure, show_legend_option2.value))
+show_legend_option3.on_change("value", lambda attr, old, new: show_legend_callback(optimizer_incremental_results_figure, show_legend_option3.value))
+show_avg_pipeline.on_change("value", lambda attr, old, new: incremental_pipe_callback(avg_pipe_plot, avg_pipe_line_plot, show_avg_pipeline.value))
+show_avg_pipeline_train.on_change("value", lambda attr, old, new: incremental_pipe_callback(avg_pipe_plot_train, avg_pipe_line_plot_train, show_avg_pipeline_train.value))
+show_best_pipeline.on_change("value", lambda attr, old, new: incremental_pipe_callback(best_pipe_plot, best_pipe_line_plot, show_best_pipeline.value))
+show_best_pipeline_train.on_change("value", lambda attr, old, new: incremental_pipe_callback(best_pipe_plot_train, best_pipe_line_plot_train, show_best_pipeline_train.value))
+show_train_pruning.on_change("value", lambda attr, old, new: pruning_cutoff_callback(train_pruning_glyph, show_train_pruning.value))
+show_ipa_pruning.on_change("value", lambda attr, old, new: pruning_cutoff_callback(ipa_pruning_glyph, show_ipa_pruning.value))
+show_ipa2_pruning.on_change("value", lambda attr, old, new: pruning_cutoff_callback(ipa2_pruning_glyph, show_ipa2_pruning.value))
 
 
 buttons1 = widgetbox(show_legend_option2, statistic, optimizer_progression_speed, optimizer_progression_max_time, optimizer_progression_size, num_pipes_text, num_pipes, optimizer_progression_range, run_optimizer_progression_button, gif_x_range, gif_speed, generate_gif_button)
-layer1 = layout(row(p,buttons1),data_table,sizing_mode='fixed')
-layer2 = layout(row(p2,column(widgetbox(show_best_pipeline),widgetbox(show_avg_pipeline))),data_table2,update_plot_button,sizing_mode='fixed')
-layer3 = layout(row(p3,widgetbox(show_legend_option)),data_table3,sizing_mode='fixed')
-layer4 = layout(row(p4,column(widgetbox(show_best_pipeline_train),widgetbox(show_avg_pipeline_train),widgetbox(show_train_pruning),widgetbox(show_ipa_pruning),widgetbox(show_ipa2_pruning))),data_table4,update_plot_button2,sizing_mode='fixed')
-layer5 = layout(p5,data_table5,sizing_mode='fixed')
-layer6 = layout(row(p6,widgetbox(show_legend_option3)),data_table6,sizing_mode='fixed')
+layer1 = layout(row(pipeline_results_boxplot_figure, buttons1), data_tables[0], sizing_mode='fixed')
+layer2 = layout(row(incremental_results_validation_figure, column(widgetbox(show_best_pipeline), widgetbox(show_avg_pipeline))), data_tables[1], update_plot_button, sizing_mode='fixed')
+layer3 = layout(row(training_time_figure, widgetbox(show_legend_option)), data_tables[2], sizing_mode='fixed')
+layer4 = layout(row(incremental_results_training_figure, column(widgetbox(show_best_pipeline_train), widgetbox(show_avg_pipeline_train), widgetbox(show_train_pruning), widgetbox(show_ipa_pruning), widgetbox(show_ipa2_pruning))), data_tables[3], update_plot_button2, sizing_mode='fixed')
+layer5 = layout(optimizer_improvement_figure, data_tables[4], sizing_mode='fixed')
+layer6 = layout(row(optimizer_incremental_results_figure, widgetbox(show_legend_option3)), data_tables[5], sizing_mode='fixed')
 tab1 = Panel(child=layer1,title="Pipeline Results")
 tab2 = Panel(child=layer2,title="Pipeline Incremental Results (Validation)")
 tab3 = Panel(child=layer3,title="Training Times")
