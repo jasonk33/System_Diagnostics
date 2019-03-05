@@ -1,4 +1,5 @@
 from bokeh.models.widgets import TextInput, Button, Select, Slider
+from constants import *
 
 # metric = Select(title="Sort By Metric", value="Score", options=["Score", "None"])
 
@@ -36,31 +37,32 @@ gif_x_range = TextInput(value="0,1", title="Set Gif x-axis (left,right)")
 gif_speed = TextInput(value="500", title="Gif Speed (milliseconds)")
 
 # Show best pipeline for incremental results (validation)
-show_best_pipeline = Select(title="Show Best Pipeline (Green)", value="No", options=["No", "Yes"])
+show_best_pipeline = Select(title="Show Best Pipeline (Green)", value=NO_OPTION, options=[NO_OPTION, YES_OPTION])
 
 # Show average of all pipelines selected for incremental results (validation)
-show_avg_pipeline = Select(title="Show Average Selected Pipeline (Red)", value="No", options=["No", "Yes"])
+show_avg_pipeline = Select(title="Show Average Selected Pipeline (Red)", value=NO_OPTION, options=[NO_OPTION, YES_OPTION])
 
 # Show legend button
-show_legend_option = Select(title="Show Legend", value="Yes", options=["Yes", "No"])
+show_legend_option = Select(title="Show Legend", value=YES_OPTION, options=[YES_OPTION, NO_OPTION])
 
 # Show legend button
-show_legend_option2 = Select(title="Show Legend", value="Yes", options=["Yes", "No"])
+show_legend_option2 = Select(title="Show Legend", value=YES_OPTION, options=[YES_OPTION, NO_OPTION])
 
 # Show legend button
-show_legend_option3 = Select(title="Show Legend", value="No", options=["Yes", "No"])
+show_legend_option3 = Select(title="Show Legend", value=NO_OPTION, options=[YES_OPTION, NO_OPTION])
 
 # Show best pipeline for incremental results (training)
-show_best_pipeline_train = Select(title="Show Best Pipeline (Green)", value="No", options=["No", "Yes"])
+show_best_pipeline_train = Select(title="Show Best Pipeline (Green)", value=NO_OPTION, options=[NO_OPTION, YES_OPTION])
 
 # Show average of all pipelines selected for incremental results (training)
-show_avg_pipeline_train = Select(title="Show Average Selected Pipeline (Red)", value="No", options=["No", "Yes"])
+show_avg_pipeline_train = Select(title="Show Average Selected Pipeline (Red)", value=NO_OPTION, options=[NO_OPTION, YES_OPTION])
 
 # Show where pruning would have stopping the training
-show_train_pruning = Select(title="Show Train Pruning Cutoff", value="No", options=["No", "Yes"])
+show_train_pruning = Select(title="Show Train Pruning Cutoff", value=NO_OPTION, options=[NO_OPTION, YES_OPTION])
 
 # Show where pruning would have stopping the training
-show_ipa_pruning = Select(title="Show IPA Pruning Cutoff", value="No", options=["No", "Yes"])
+show_ipa_pruning = Select(title="Show IPA Pruning Cutoff", value=NO_OPTION, options=[NO_OPTION, YES_OPTION])
 
 # Show where pruning would have stopping the training
-show_ipa2_pruning = Select(title="Show IPA2 Pruning Cutoff", value="No", options=["No", "Yes"])
+show_ipa2_pruning = Select(title="Show IPA2 Pruning Cutoff", value=NO_OPTION, options=[NO_OPTION, YES_OPTION])
+
